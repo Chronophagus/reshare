@@ -1,0 +1,8 @@
+[workspace]
+
+members = [
+    "reshare-server",
+    "reshare-cli-client",
+    "reshare-web-client",
+    "reshare-models",
+]
