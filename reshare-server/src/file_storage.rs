@@ -1,5 +1,8 @@
 use reshare_models::FileInfo;
 use std::collections::{hash_set::Iter, HashMap, HashSet};
+use thiserror::Error;
+
+pub type Result<T, E = StorageError> = std::result::Result<T, E>;
 
 #[derive(Debug, Clone)]
 pub struct FileStorage {
@@ -29,11 +32,11 @@ impl FileStorage {
         }
     }
 
-    pub fn list(&self, keyphrase: &Option<String>) -> Option<impl Iterator<Item = &FileInfo>> {
+    pub fn list(&self, keyphrase: &Option<String>) -> Result<impl Iterator<Item = &FileInfo>> {
         // Why can't rust compiler infer correct types when I use impl Iterator in list definitions?
         match keyphrase {
-            Some(key) => self.private.list(key),
-            None => Some(self.public.list()),
+            Some(key) => self.private.list(key).ok_or(StorageError::DoesntExist),
+            None => Ok(self.public.list()),
         }
     }
 }
@@ -83,5 +86,23 @@ impl PrivateStorage {
 
     fn list(&self, shard_name: &str) -> Option<Iter<'_, FileInfo>> {
         self.0.get(shard_name).map(|storage| storage.iter())
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum StorageError {
+    #[error("Requested storage doesn't exist")]
+    DoesntExist,
+}
+
+impl actix_web::error::ResponseError for StorageError {
+    fn error_response(&self) -> actix_web::HttpResponse {
+        actix_web::dev::HttpResponseBuilder::new(self.status_code()).json(reshare_models::Error {
+            error_msg: self.to_string(),
+        })
+    }
+
+    fn status_code(&self) -> actix_web::http::StatusCode {
+        actix_web::http::StatusCode::NOT_FOUND
     }
 }

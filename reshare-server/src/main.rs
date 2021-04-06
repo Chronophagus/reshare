@@ -22,6 +22,17 @@ async fn index(storage: web::Data<Storage>) -> impl Responder {
     HttpResponse::Ok().json(files)
 }
 
+#[get("/private/{keyphrase}")]
+async fn list_private(
+    storage: web::Data<Storage>,
+    web::Path(keyphrase): web::Path<String>,
+) -> Result<HttpResponse, Error> {
+    let guard = storage.lock().unwrap();
+
+    let files: Vec<_> = guard.list(&Some(keyphrase))?.collect();
+    Ok(HttpResponse::Ok().json(files))
+}
+
 #[post("/dummy")]
 async fn upload_file(
     form_data: Multipart,
@@ -101,6 +112,7 @@ async fn main() -> std::io::Result<()> {
             .wrap(Logger::default())
             .service(index)
             .service(upload_file)
+            .service(list_private)
             .service(dummy_uploader)
     };
 
