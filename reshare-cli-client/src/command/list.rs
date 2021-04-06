@@ -1,22 +1,32 @@
 use super::*;
 
 use comfy_table::Table;
-use reshare_models::FileInfo;
+use reshare_models::{Error, FileInfo};
 use std::iter::FromIterator;
 
-pub fn execute() -> Result<()> {
+pub fn execute(list: ListArgs) -> Result<()> {
     let server_url = load_configuration()?;
-    let files = http::get(&server_url)
-        .context(format!("Failure queriing {}", server_url))?
-        .json::<Vec<FileInfo>>()
-        .context("Error interpreting response")?;
 
-    let table: FilesTableView = files.into_iter().collect();
+    let query_url = match list.key_phrase {
+        Some(key_phrase) => server_url.join("private/")?.join(&key_phrase)?,
+        None => server_url,
+    };
 
-    if table.is_empty() {
-        println!("No available public files");
+    let resp = http::get(query_url.clone()).context(format!("Failure quering {}", query_url))?;
+
+    if resp.status().is_success() {
+        let files: Vec<FileInfo> = resp.json()?;
+
+        let table: FilesTableView = files.into_iter().collect();
+
+        if table.is_empty() {
+            println!("No files are currently available");
+        } else {
+            println!("{}", table);
+        }
     } else {
-        println!("{}", table);
+        let error: Error = resp.json()?;
+        anyhow::bail!("{}", error.error_msg)
     }
 
     Ok(())

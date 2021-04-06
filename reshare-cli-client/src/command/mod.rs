@@ -3,18 +3,20 @@ pub mod get;
 pub mod list;
 pub mod put;
 
-use super::cli::{ConfigArgs, GetArgs, PutArgs};
+use super::cli::{ConfigArgs, GetArgs, ListArgs, PutArgs};
 use super::Result;
 use anyhow::Context;
 use reqwest::blocking as http;
+use reqwest::Url;
 
-const CONFIG_FILE_NAME: &str = "reshare-addr";
+const CONFIG_FILE_NAME: &str = "reshare-url";
 
-type Configuration = String;
+type Configuration = Url;
 
 fn configure(server_addr: &str) -> Result<()> {
     let config_file_path = get_config_file_path();
-    // TODO: Validate server_addr
+
+    Url::parse(server_addr)?;
     std::fs::write(config_file_path, server_addr.trim()).context("Error writing configuration file")
 }
 
@@ -28,7 +30,7 @@ fn load_configuration() -> Result<Configuration> {
         anyhow::bail!("Configuration file is empty");
     }
 
-    Ok(conf)
+    Ok(Url::parse(&conf)?)
 }
 
 fn get_config_file_path() -> std::path::PathBuf {

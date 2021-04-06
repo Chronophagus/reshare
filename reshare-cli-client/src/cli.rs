@@ -10,7 +10,7 @@ pub enum Command {
     /// Configures client to work with an appropriate reshare server
     Config(ConfigArgs),
     /// Lists all public files on the server
-    List,
+    List(ListArgs),
     /// Uploads files on the server
     Put(PutArgs),
     /// Downloads files from the server
@@ -21,6 +21,12 @@ pub enum Command {
 pub struct ConfigArgs {
     #[structopt(long)]
     pub server_addr: Option<String>,
+}
+
+#[derive(Debug, StructOpt)]
+pub struct ListArgs {
+    #[structopt(long)]
+    pub key_phrase: Option<String>,
 }
 
 #[derive(Debug, StructOpt)]

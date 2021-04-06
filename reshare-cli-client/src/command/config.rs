@@ -11,6 +11,6 @@ pub fn execute(args: ConfigArgs) -> Result<()> {
 }
 
 fn prompt() -> Result<String> {
-    let url = Input::new().with_prompt("Enter server addr").interact()?;
+    let url = Input::new().with_prompt("Enter server url").interact()?;
     Ok(url)
 }
