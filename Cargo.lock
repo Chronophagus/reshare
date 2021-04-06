@@ -1749,6 +1749,7 @@ dependencies = [
  "actix-multipart",
  "actix-web",
  "chrono",
+ "dirs-next",
  "env_logger",
  "futures",
  "futures-core",

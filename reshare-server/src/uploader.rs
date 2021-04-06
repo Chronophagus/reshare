@@ -4,14 +4,16 @@ use crate::multipart::{
 use actix_multipart::Multipart;
 use actix_web::{error::BlockingError, web};
 use futures::StreamExt;
-use once_cell::sync::Lazy;
+use once_cell::sync::{Lazy, OnceCell};
 use std::io::prelude::*;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
 pub type Result<T, E = UploadError> = std::result::Result<T, E>;
 
 static FILES_TO_REMOVE: Lazy<RemovalQueue> = Lazy::new(|| RemovalQueue::new());
+const SERVER_DIRECTORY_NAME: &str = "reshare_files";
 
 pub async fn save_file<S>(
     file_name: String,
@@ -22,7 +24,7 @@ where
 {
     use rand::{distributions::Alphanumeric, Rng};
 
-    // remove scheduled for removal files
+    // delete scheduled for removal files
     let _ = web::block(move || {
         let files = FILES_TO_REMOVE.clone();
         let mut queue = files.queue.lock().unwrap();
@@ -46,9 +48,11 @@ where
         .map(char::from)
         .collect();
 
+    let storage_path = get_work_dir().join(&actual_name);
+
     let mut f = {
-        let actual_name = actual_name.clone();
-        web::block(|| std::fs::File::create(actual_name)).await?
+        let storage_path = storage_path.clone();
+        web::block(|| std::fs::File::create(storage_path)).await?
     };
 
     while let Some(chunk) = stream.next().await {
@@ -62,20 +66,28 @@ where
     log::debug!("File size: {}", bytes_written);
 
     if bytes_written == 0 {
-        let _ = web::block(move || std::fs::remove_file(actual_name)).await;
+        {
+            let storage_path = storage_path.clone();
+            let _ = web::block(move || std::fs::remove_file(storage_path)).await;
+        }
+
         Err(UploadError::EmptyFile)
     } else {
         Ok(reshare_models::FileInfo {
             name: file_name,
             size: bytes_written,
             upload_date: chrono::Local::now(),
-            storage_path: std::path::PathBuf::from(actual_name),
+            storage_path,
         })
     }
 }
 
 pub fn schedule_removal(file_info: reshare_models::FileInfo) {
     FILES_TO_REMOVE.add(file_info);
+}
+
+pub async fn cleanup() {
+    let _ = web::block(|| std::fs::remove_dir_all(get_work_dir())).await;
 }
 
 pub struct UploadForm {
@@ -112,9 +124,6 @@ pub enum UploadError {
 
     #[error("Operation failed due to internal failure")]
     InternalFailure,
-
-    #[error("File exists")]
-    FileExists(reshare_models::FileInfo),
 }
 
 impl actix_web::error::ResponseError for UploadError {
@@ -132,7 +141,6 @@ impl actix_web::error::ResponseError for UploadError {
             Self::Multipart { source: err } => err.status_code(),
             Self::EmptyFile => StatusCode::BAD_REQUEST,
             Self::InternalFailure => StatusCode::INTERNAL_SERVER_ERROR,
-            Self::FileExists(_) => StatusCode::BAD_REQUEST,
         }
     }
 }
@@ -142,6 +150,19 @@ impl From<BlockingError<std::io::Error>> for UploadError {
         log::error!("{}", err);
         UploadError::InternalFailure
     }
+}
+
+fn get_work_dir() -> &'static Path {
+    static DIR: OnceCell<PathBuf> = OnceCell::new();
+
+    DIR.get_or_init(|| {
+        let root_path = dirs_next::home_dir().unwrap_or(PathBuf::from("/"));
+        let dir_path = root_path.join(SERVER_DIRECTORY_NAME);
+        let _ = std::fs::create_dir(&dir_path);
+
+        dir_path
+    })
+    .as_path()
 }
 
 #[derive(Clone)]

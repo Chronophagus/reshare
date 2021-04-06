@@ -30,29 +30,36 @@ async fn upload_file(
     let mut upload_form = UploadForm::try_from_multipart(form_data).await?;
     let mut statuses = Vec::new();
 
-    let keyphrase = &upload_form.keyphrase;
+    let keyphrase = upload_form.keyphrase;
 
     while let Some(file) = upload_form.files.next_file().await? {
         let upload_status = uploader::save_file(file.filename, file.file_stream).await;
-        let mut guard = storage.lock().unwrap();
+        let mut storage = storage.lock().unwrap();
 
-        statuses.push(upload_status.and_then(|file_info| {
-            if guard.is_file_exists(&file_info, &keyphrase) {
-                Err(uploader::UploadError::FileExists(file_info))
-            } else {
-                Ok(file_info)
-            }
-        }));
+        statuses.push(upload_status);
 
-        match statuses.last().unwrap() {
-            Ok(file_info) => {
-                guard.add_file(file_info.clone(), keyphrase.clone());
+        match statuses.last_mut().unwrap() {
+            Ok(status_file_info) => {
+                // Ensure unique name
+                let file_info = std::iter::once(status_file_info.clone())
+                    .chain((1..).map(|num| FileInfo {
+                        name: format!("{}({})", status_file_info.name, num),
+                        ..status_file_info.clone()
+                    }))
+                    .skip_while(|file_info| storage.is_file_exists(file_info, &keyphrase))
+                    .next()
+                    .unwrap();
+
+                log::info!(
+                    "Uploaded file: \"{}\", upload size: {}",
+                    file_info.name,
+                    file_info.size
+                );
+
+                storage.add_file(file_info.clone(), keyphrase.clone());
+                *status_file_info = file_info;
             }
             Err(err) => {
-                if let uploader::UploadError::FileExists(file_info) = err {
-                    uploader::schedule_removal(file_info.clone());
-                }
-
                 return Err(HttpResponseBuilder::new(err.status_code())
                     .json(transform_statuses(statuses))
                     .into());
@@ -98,9 +105,7 @@ async fn main() -> std::io::Result<()> {
     };
 
     HttpServer::new(app).bind("0.0.0.0:8080")?.run().await?;
-
-    // TODO:
-    // uploader::clear_upload_dir().await?
+    uploader::cleanup().await;
 
     Ok(())
 }
