@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use structopt::StructOpt;
 
 pub fn parse_args() -> Command {
@@ -31,13 +32,14 @@ pub struct ListArgs {
 
 #[derive(Debug, StructOpt)]
 pub struct PutArgs {
+    #[structopt(long)]
     pub key_phrase: Option<String>,
-    pub ttl: Option<u32>,
-    pub public: Option<String>,
+
+    pub file_list: Vec<PathBuf>,
 }
 
 #[derive(Debug, StructOpt)]
 pub struct GetArgs {
+    #[structopt(long)]
     pub key_phrase: Option<String>,
-    pub public: Option<String>,
 }

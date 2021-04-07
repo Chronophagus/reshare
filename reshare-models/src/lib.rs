@@ -6,7 +6,7 @@ pub use file_info::FileInfo;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum FileUploadStatus {
     Success(FileInfo),
     Error(Error),

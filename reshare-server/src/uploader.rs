@@ -10,10 +10,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
-pub type Result<T, E = UploadError> = std::result::Result<T, E>;
-
-static FILES_TO_REMOVE: Lazy<RemovalQueue> = Lazy::new(|| RemovalQueue::new());
 const SERVER_DIRECTORY_NAME: &str = "reshare_files";
+
+pub type Result<T, E = UploadError> = std::result::Result<T, E>;
 
 pub async fn save_file<S>(
     file_name: String,
@@ -23,21 +22,6 @@ where
     S: StreamExt<Item = MultipartFileChunk> + Unpin,
 {
     use rand::{distributions::Alphanumeric, Rng};
-
-    // delete scheduled for removal files
-    let _ = web::block(move || {
-        let files = FILES_TO_REMOVE.clone();
-        let mut queue = files.queue.lock().unwrap();
-
-        for file_info in queue.iter() {
-            let _ = std::fs::remove_file(&file_info.storage_path);
-        }
-
-        queue.clear();
-
-        Ok::<(), ()>(())
-    })
-    .await;
 
     let stream = file_stream.as_mut();
     let mut bytes_written: u64 = 0;
@@ -63,8 +47,6 @@ where
         bytes_written += chunk_size as u64;
     }
 
-    log::debug!("File size: {}", bytes_written);
-
     if bytes_written == 0 {
         {
             let storage_path = storage_path.clone();
@@ -80,10 +62,6 @@ where
             storage_path,
         })
     }
-}
-
-pub fn schedule_removal(file_info: reshare_models::FileInfo) {
-    FILES_TO_REMOVE.add(file_info);
 }
 
 pub async fn cleanup() {
@@ -163,22 +141,4 @@ fn get_work_dir() -> &'static Path {
         dir_path
     })
     .as_path()
-}
-
-#[derive(Clone)]
-struct RemovalQueue {
-    queue: Arc<Mutex<Vec<reshare_models::FileInfo>>>,
-}
-
-impl RemovalQueue {
-    fn new() -> Self {
-        Self {
-            queue: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-
-    fn add(&self, file_info: reshare_models::FileInfo) {
-        let mut guard = self.queue.lock().unwrap();
-        guard.push(file_info);
-    }
 }

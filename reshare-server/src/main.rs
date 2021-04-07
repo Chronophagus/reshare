@@ -33,7 +33,7 @@ async fn list_private(
     Ok(HttpResponse::Ok().json(files))
 }
 
-#[post("/dummy")]
+#[post("/upload")]
 async fn upload_file(
     form_data: Multipart,
     storage: web::Data<Storage>,
@@ -81,7 +81,7 @@ async fn upload_file(
     Ok(HttpResponse::Ok().json(transform_statuses(statuses)))
 }
 
-#[get("/dummy")]
+#[get("/upload")]
 fn dummy_uploader(_storage: web::Data<Storage>) -> HttpResponse {
     let html = r#"<html>
         <head><title>Upload Test</title></head>
@@ -109,7 +109,7 @@ async fn main() -> std::io::Result<()> {
     let app = move || {
         App::new()
             .app_data(file_storage.clone())
-            .wrap(Logger::default())
+            .wrap(Logger::new("%a '%U' -> %s in %Dms"))
             .service(index)
             .service(upload_file)
             .service(list_private)
