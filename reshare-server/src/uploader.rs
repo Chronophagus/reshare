@@ -4,10 +4,9 @@ use crate::multipart::{
 use actix_multipart::Multipart;
 use actix_web::{error::BlockingError, web};
 use futures::StreamExt;
-use once_cell::sync::{Lazy, OnceCell};
+use once_cell::sync::OnceCell;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 use thiserror::Error;
 
 const SERVER_DIRECTORY_NAME: &str = "reshare_files";

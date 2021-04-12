@@ -1,9 +1,7 @@
 use super::*;
+use crate::utils::{MonitoredStream, ProgressTracker};
 use anyhow::{anyhow, bail};
-use bytes::BytesMut;
-use futures::{future, Stream};
-use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use pin_project::pin_project;
+use futures::future;
 use reqwest::{
     multipart::{Form, Part},
     Body,
@@ -12,13 +10,9 @@ use reshare_models::FileUploadStatus;
 use std::{
     collections::HashMap,
     convert::{TryFrom, TryInto},
-    ops::Deref,
     path::PathBuf,
-    pin::Pin,
-    sync::{Arc, Mutex},
-    task::{Context, Poll},
 };
-use tokio::{fs::File, io::AsyncRead, runtime as rt, sync::mpsc};
+use tokio::{fs::File, runtime as rt, sync::mpsc};
 use tokio_util::codec::{BytesCodec, FramedRead};
 
 pub fn execute(args: PutArgs) -> Result<()> {
@@ -37,30 +31,37 @@ pub fn execute(args: PutArgs) -> Result<()> {
     let query_url = server_url.join("upload").unwrap();
     let key_phrase = args.key_phrase;
 
-    let (reporter, mut monitor) = mpsc::channel(4096);
+    let rt = rt::Runtime::new()?;
 
-    let upload_status = ProgressStatus::new();
-    let mut progress_bars = HashMap::new();
+    let upload_tracker = ProgressTracker::new();
 
-    for f in &files {
-        let pb = upload_status.add(&f.name, f.len);
-        progress_bars.insert(f.name.clone(), pb);
-    }
-
-    let upload_progress_task = std::thread::spawn(move || {
-        upload_status.wait();
+    let progress_bars = files.iter().fold(HashMap::new(), |mut map, file_ref| {
+        let pb = upload_tracker.add(&file_ref.name, file_ref.len);
+        map.insert(file_ref.name.clone(), pb);
+        map
     });
 
+    let upload_tracking_task = rt.spawn_blocking(move || {
+        upload_tracker.show();
+    });
+
+    let (reporter, mut monitor) = mpsc::channel(4096);
     let upload_tasks: Vec<_> = files
-        .into_iter()
-        .map(|f| file_upload_task(query_url.clone(), f, key_phrase.clone(), reporter.clone()))
+        .iter()
+        .map(|file_ref| {
+            file_upload_task(
+                query_url.clone(),
+                file_ref.clone(),
+                key_phrase.clone(),
+                reporter.clone(),
+            )
+        })
         .collect();
 
     drop(reporter);
 
-    let rt = rt::Runtime::new()?;
-    rt.block_on(async move {
-        let monitor_task = tokio::spawn(async move {
+    let results = rt.block_on(async move {
+        tokio::spawn(async move {
             while let Some(progress_update) = monitor.recv().await {
                 if let Some(progress_bar) = progress_bars.get(&progress_update.file_name) {
                     progress_bar.inc(progress_update.bytes_uploaded);
@@ -72,10 +73,20 @@ pub fn execute(args: PutArgs) -> Result<()> {
             }
         });
 
-        future::join_all(upload_tasks).await
+        let results = future::join_all(upload_tasks).await;
+        let _ = upload_tracking_task.await;
+        results
     });
 
-    upload_progress_task.join();
+    for (res, file) in results.iter().zip(files.iter()) {
+        match res {
+            Ok(FileUploadStatus::Error(error_msg)) => {
+                println!("{} - Error while uploading file: {}", file.name, error_msg);
+            }
+            Err(e) => println!("{} - operation failed. {}", file.name, e),
+            _ => (),
+        }
+    }
 
     Ok(())
 }
@@ -88,8 +99,8 @@ async fn file_upload_task(
 ) -> Result<FileUploadStatus> {
     let file = File::open(file_ref.path).await?;
 
-    let mut file_stream: MonitoredStream<_> = FramedRead::new(file, BytesCodec::new()).into();
-    let mut monitor = file_stream.take_monitor();
+    let file_stream = FramedRead::new(file, BytesCodec::new());
+    let (file_stream, mut monitor) = MonitoredStream::new(file_stream);
 
     let file_name = file_ref.name.clone();
 
@@ -127,7 +138,7 @@ async fn file_upload_task(
         .ok_or_else(|| anyhow!("Unexpected response from the server"))
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 struct FileRef {
     name: String,
     len: u64,
@@ -152,86 +163,7 @@ impl TryFrom<PathBuf> for FileRef {
     }
 }
 
-#[pin_project]
-struct MonitoredStream<R> {
-    #[pin]
-    stream: FramedRead<R, BytesCodec>,
-    reporter: mpsc::UnboundedSender<u64>,
-    monitor: Option<mpsc::UnboundedReceiver<u64>>,
-}
-
-impl<R> MonitoredStream<R> {
-    fn take_monitor(&mut self) -> mpsc::UnboundedReceiver<u64> {
-        self.monitor
-            .take()
-            .expect("take_monitor() can be called only once")
-    }
-}
-
-impl<R: AsyncRead> From<FramedRead<R, BytesCodec>> for MonitoredStream<R> {
-    fn from(stream: FramedRead<R, BytesCodec>) -> Self {
-        let (reporter, monitor) = mpsc::unbounded_channel();
-
-        Self {
-            stream,
-            reporter,
-            monitor: Some(monitor),
-        }
-    }
-}
-
-impl<R: AsyncRead> Stream for MonitoredStream<R> {
-    type Item = <FramedRead<R, BytesCodec> as Stream>::Item;
-
-    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        let this = self.project();
-
-        match this.stream.poll_next(cx) {
-            Poll::Ready(Some(Ok(bytes))) => {
-                if let Err(e) = this.reporter.send(bytes.len() as u64) {
-                    println!("Reporter error: {}", e);
-                }
-
-                Poll::Ready(Some(Ok(bytes)))
-            }
-            poll => poll,
-        }
-    }
-}
-
 struct ProgressUpdate {
     file_name: String,
     bytes_uploaded: u64,
-}
-
-#[derive(Clone)]
-struct ProgressStatus {
-    multiprogress: Arc<MultiProgress>,
-}
-
-impl ProgressStatus {
-    fn new() -> Self {
-        Self {
-            multiprogress: Arc::new(MultiProgress::new()),
-        }
-    }
-
-    fn wait(&self) {
-        let _ = self.multiprogress.join();
-    }
-
-    fn add(&self, file_name: &str, file_size: u64) -> ProgressBar {
-        let progress_bar = self.multiprogress.add(ProgressBar::new(file_size));
-
-        progress_bar.set_style(
-            ProgressStyle::default_bar()
-                .template(
-                    "{spinner:.green} [{elapsed_precise}] {prefix} [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} | {bytes_per_sec} (finishes in {eta})",
-                )
-                .progress_chars("=>-"),
-        );
-
-        progress_bar.set_prefix(file_name);
-        progress_bar
-    }
 }

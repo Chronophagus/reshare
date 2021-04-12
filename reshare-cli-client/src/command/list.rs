@@ -46,10 +46,10 @@ impl FilesTableView {
 
 impl FromIterator<FileInfo> for FilesTableView {
     fn from_iter<I: IntoIterator<Item = FileInfo>>(iter: I) -> Self {
-        use bytesize::ByteSize;
         use comfy_table::modifiers::UTF8_ROUND_CORNERS;
         use comfy_table::presets::UTF8_FULL;
         use comfy_table::*;
+        use indicatif::HumanBytes;
 
         let mut table = Table::new();
 
@@ -70,7 +70,7 @@ impl FromIterator<FileInfo> for FilesTableView {
 
         let mut rows_count = 0;
         for item in iter {
-            let human_readable_size = ByteSize::b(item.size).to_string_as(false);
+            let human_readable_size = HumanBytes(item.size);
             let human_readable_date = item.upload_date.format("%b %d, %H:%M").to_string();
             table.add_row(vec![
                 Cell::new(item.name).set_alignment(CellAlignment::Center),
