@@ -7,9 +7,10 @@ use std::iter::FromIterator;
 pub fn execute(list: ListArgs) -> Result<()> {
     let server_url = load_configuration()?;
 
+    let query_url = server_url.join("api/")?;
     let query_url = match list.key_phrase {
-        Some(key_phrase) => server_url.join("private/")?.join(&key_phrase)?,
-        None => server_url,
+        Some(key_phrase) => query_url.join("private/")?.join(&key_phrase)?,
+        None => query_url.join("list")?,
     };
 
     let resp = http::get(query_url.clone()).context(format!("Failure quering {}", query_url))?;

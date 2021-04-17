@@ -28,7 +28,7 @@ pub fn execute(args: PutArgs) -> Result<()> {
         bail!("No files to upload");
     }
 
-    let query_url = server_url.join("upload").unwrap();
+    let query_url = server_url.join("api/")?.join("upload")?;
     let key_phrase = args.key_phrase;
 
     let rt = rt::Runtime::new()?;

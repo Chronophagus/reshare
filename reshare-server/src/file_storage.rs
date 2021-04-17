@@ -25,6 +25,15 @@ impl FileStorage {
         }
     }
 
+    pub fn get_file(&self, file_name: String, keyphrase: &Option<String>) -> Option<&FileInfo> {
+        let file_info = FileInfo::from_name(file_name);
+
+        match keyphrase {
+            Some(key) => self.private.get_file(key, &file_info),
+            None => self.public.get_file(&file_info),
+        }
+    }
+
     pub fn add_file(&mut self, file_info: FileInfo, keyphrase: Option<String>) {
         match keyphrase {
             Some(key) => self.private.add_file(key, file_info),
@@ -33,7 +42,6 @@ impl FileStorage {
     }
 
     pub fn list(&self, keyphrase: &Option<String>) -> Result<impl Iterator<Item = &FileInfo>> {
-        // Why can't rust compiler infer correct types when I use impl Iterator in list definitions?
         match keyphrase {
             Some(key) => self.private.list(key).ok_or(StorageError::DoesntExist),
             None => Ok(self.public.list()),
@@ -51,16 +59,20 @@ impl PublicStorage {
         Self(Storage::new())
     }
 
+    fn list(&self) -> Iter<'_, FileInfo> {
+        self.0.iter()
+    }
+
     fn is_file_exists(&self, file_info: &FileInfo) -> bool {
         self.0.contains(file_info)
     }
 
-    fn add_file(&mut self, file_info: FileInfo) {
-        self.0.insert(file_info);
+    fn get_file(&self, file_info: &FileInfo) -> Option<&FileInfo> {
+        self.0.get(file_info)
     }
 
-    fn list(&self) -> Iter<'_, FileInfo> {
-        self.0.iter()
+    fn add_file(&mut self, file_info: FileInfo) {
+        self.0.insert(file_info);
     }
 }
 
@@ -70,6 +82,16 @@ struct PrivateStorage(HashMap<String, Storage>);
 impl PrivateStorage {
     fn new() -> Self {
         Self(HashMap::new())
+    }
+
+    fn list(&self, shard_name: &str) -> Option<Iter<'_, FileInfo>> {
+        self.0.get(shard_name).map(|storage| storage.iter())
+    }
+
+    fn get_file(&self, shard_name: &str, file_info: &FileInfo) -> Option<&FileInfo> {
+        self.0
+            .get(shard_name)
+            .and_then(|storage| storage.get(file_info))
     }
 
     fn is_file_exists(&self, shard_name: &str, file_info: &FileInfo) -> bool {
@@ -82,10 +104,6 @@ impl PrivateStorage {
     fn add_file(&mut self, shard_name: String, file_info: FileInfo) {
         let storage = self.0.entry(shard_name).or_insert(Storage::new());
         storage.insert(file_info);
-    }
-
-    fn list(&self, shard_name: &str) -> Option<Iter<'_, FileInfo>> {
-        self.0.get(shard_name).map(|storage| storage.iter())
     }
 }
 

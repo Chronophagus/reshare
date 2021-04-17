@@ -1783,6 +1783,7 @@ dependencies = [
  "futures-core",
  "log",
  "once_cell",
+ "pin-project 1.0.6",
  "rand 0.8.3",
  "reshare-models",
  "sanitize-filename-reader-friendly",

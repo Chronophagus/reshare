@@ -1,11 +1,12 @@
+mod downloader;
 mod file_storage;
 mod multipart;
 mod uploader;
 
 use actix_multipart::Multipart;
 use actix_web::{
-    dev::HttpResponseBuilder, error::ResponseError, get, middleware::Logger, post, web, App, Error,
-    HttpResponse, HttpServer, Responder,
+    body::Body, dev::HttpResponseBuilder, error::ResponseError, get, http::header,
+    middleware::Logger, post, web, App, Error, HttpResponse, HttpServer, Responder,
 };
 use file_storage::FileStorage;
 use reshare_models::{FileInfo, FileUploadStatus};
@@ -14,8 +15,8 @@ use uploader::UploadForm;
 
 type Storage = Mutex<FileStorage>;
 
-#[get("/")]
-async fn index(storage: web::Data<Storage>) -> impl Responder {
+#[get("/list")]
+async fn list(storage: web::Data<Storage>) -> impl Responder {
     let guard = storage.lock().unwrap();
 
     let files: Vec<_> = guard.list(&None).unwrap().collect();
@@ -34,10 +35,7 @@ async fn list_private(
 }
 
 #[post("/upload")]
-async fn upload_file(
-    form_data: Multipart,
-    storage: web::Data<Storage>,
-) -> Result<HttpResponse, Error> {
+async fn upload(form_data: Multipart, storage: web::Data<Storage>) -> Result<HttpResponse, Error> {
     let mut upload_form = UploadForm::try_from_multipart(form_data).await?;
     let mut statuses = Vec::new();
 
@@ -81,6 +79,40 @@ async fn upload_file(
     Ok(HttpResponse::Ok().json(transform_statuses(statuses)))
 }
 
+#[get("/download/{file_name}")]
+async fn download(
+    web::Path(file_name): web::Path<String>,
+    storage: web::Data<Storage>,
+) -> Result<HttpResponse, Error> {
+    let file_info = {
+        let guard = storage.lock().unwrap();
+        guard
+            .get_file(file_name, &None)
+            .cloned()
+            .ok_or_else(|| HttpResponse::NotFound().finish())?
+    };
+
+    let content_dispostion = header::ContentDisposition {
+        disposition: header::DispositionType::Attachment,
+        parameters: vec![header::DispositionParam::Filename(file_info.name.clone())],
+    };
+
+    let file_stream = downloader::download_file_stream(&file_info).await?;
+    let response_body: Body = file_stream.into();
+
+    Ok(HttpResponse::Ok()
+        .header(header::CONTENT_DISPOSITION, content_dispostion)
+        .body(response_body))
+}
+
+#[get("/private/{keyphrase}/{file_name}")]
+async fn download_private(
+    web::Path((a, b)): web::Path<(String, String)>,
+    _storage: web::Data<Storage>,
+) -> impl Responder {
+    HttpResponse::Ok().json(format!("{}-{}", a, b))
+}
+
 #[get("/upload")]
 fn dummy_uploader(_storage: web::Data<Storage>) -> HttpResponse {
     let html = r#"<html>
@@ -101,7 +133,7 @@ fn dummy_uploader(_storage: web::Data<Storage>) -> HttpResponse {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    std::env::set_var("RUST_LOG", "reshare_server=debug,actix_web=info");
+    std::env::set_var("RUST_LOG", "reshare_server=info,actix_web=info");
     env_logger::init();
 
     let file_storage = web::Data::new(Mutex::new(FileStorage::new()));
@@ -110,10 +142,15 @@ async fn main() -> std::io::Result<()> {
         App::new()
             .app_data(file_storage.clone())
             .wrap(Logger::new("%a '%U' -> %s in %Dms"))
-            .service(index)
-            .service(upload_file)
-            .service(list_private)
-            .service(dummy_uploader)
+            .service(
+                web::scope("/api")
+                    .service(list)
+                    .service(list_private)
+                    .service(download)
+                    .service(download_private)
+                    .service(upload)
+                    .service(dummy_uploader),
+            )
     };
 
     HttpServer::new(app).bind("0.0.0.0:8080")?.run().await?;

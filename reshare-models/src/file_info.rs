@@ -12,6 +12,15 @@ pub struct FileInfo {
 }
 
 impl FileInfo {
+    pub fn from_name(file_name: String) -> Self {
+        Self {
+            name: file_name,
+            size: Default::default(),
+            upload_date: Local::now(),
+            storage_path: Default::default(),
+        }
+    }
+
     pub fn dummy() -> Self {
         Self {
             name: "dummy-file-name.jpg".to_string(),
