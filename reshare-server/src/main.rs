@@ -136,6 +136,11 @@ async fn main() -> std::io::Result<()> {
     std::env::set_var("RUST_LOG", "reshare_server=debug,actix_web=info");
     env_logger::init();
 
+    let listen_addr = std::env::vars()
+        .find(|(key, _)| key == "PORT")
+        .map(|(_, val)| format!("0.0.0.0:{}", val))
+        .unwrap_or_else(|| "0.0.0.0:8080".to_owned());
+
     let file_storage = web::Data::new(Mutex::new(FileStorage::new()));
 
     let app = move || {
@@ -153,7 +158,7 @@ async fn main() -> std::io::Result<()> {
             )
     };
 
-    HttpServer::new(app).bind("0.0.0.0:8080")?.run().await?;
+    HttpServer::new(app).bind(listen_addr)?.run().await?;
     uploader::cleanup().await;
 
     Ok(())
