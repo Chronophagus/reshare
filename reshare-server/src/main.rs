@@ -133,7 +133,7 @@ fn dummy_uploader(_storage: web::Data<Storage>) -> HttpResponse {
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
-    std::env::set_var("RUST_LOG", "reshare_server=info,actix_web=info");
+    std::env::set_var("RUST_LOG", "reshare_server=debug,actix_web=info");
     env_logger::init();
 
     let file_storage = web::Data::new(Mutex::new(FileStorage::new()));
@@ -141,7 +141,7 @@ async fn main() -> std::io::Result<()> {
     let app = move || {
         App::new()
             .app_data(file_storage.clone())
-            .wrap(Logger::new("%a '%U' -> %s in %Dms"))
+            .wrap(Logger::new("%a '%U' -> %s in %Ts"))
             .service(
                 web::scope("/api")
                     .service(list)
