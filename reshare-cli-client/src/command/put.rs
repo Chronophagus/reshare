@@ -1,5 +1,8 @@
 use super::*;
-use crate::utils::{MonitoredStream, ProgressTracker};
+use crate::utils::{
+    progress_tracker::{ProgressReporter, ProgressTracker, ProgressUpdate},
+    MonitoredStream,
+};
 use anyhow::{anyhow, bail};
 use futures::future;
 use reqwest::{
@@ -8,11 +11,10 @@ use reqwest::{
 };
 use reshare_models::FileUploadStatus;
 use std::{
-    collections::HashMap,
     convert::{TryFrom, TryInto},
     path::PathBuf,
 };
-use tokio::{fs::File, runtime as rt, sync::mpsc};
+use tokio::{fs::File, runtime as rt};
 use tokio_util::codec::{BytesCodec, FramedRead};
 
 pub fn execute(args: PutArgs) -> Result<()> {
@@ -31,21 +33,12 @@ pub fn execute(args: PutArgs) -> Result<()> {
     let query_url = server_url.join("api/")?.join("upload")?;
     let key_phrase = args.key_phrase;
 
-    let rt = rt::Runtime::new()?;
+    let mut upload_tracker = ProgressTracker::new();
 
-    let upload_tracker = ProgressTracker::new();
+    for file_ref in &files {
+        upload_tracker.add_bar(file_ref.name.clone(), file_ref.len);
+    }
 
-    let progress_bars = files.iter().fold(HashMap::new(), |mut map, file_ref| {
-        let pb = upload_tracker.add(&file_ref.name, file_ref.len);
-        map.insert(file_ref.name.clone(), pb);
-        map
-    });
-
-    let upload_tracking_task = rt.spawn_blocking(move || {
-        upload_tracker.show();
-    });
-
-    let (reporter, mut monitor) = mpsc::channel(4096);
     let upload_tasks: Vec<_> = files
         .iter()
         .map(|file_ref| {
@@ -53,25 +46,15 @@ pub fn execute(args: PutArgs) -> Result<()> {
                 query_url.clone(),
                 file_ref.clone(),
                 key_phrase.clone(),
-                reporter.clone(),
+                upload_tracker.get_reporter(),
             )
         })
         .collect();
 
-    drop(reporter);
+    let rt = rt::Runtime::new()?;
 
     let results = rt.block_on(async move {
-        tokio::spawn(async move {
-            while let Some(progress_update) = monitor.recv().await {
-                if let Some(progress_bar) = progress_bars.get(&progress_update.file_name) {
-                    progress_bar.inc(progress_update.bytes_uploaded);
-                }
-            }
-
-            for (_, bar) in progress_bars {
-                bar.abandon();
-            }
-        });
+        let upload_tracking_task = upload_tracker.spawn();
 
         let results = future::join_all(upload_tasks).await;
         let _ = upload_tracking_task.await;
@@ -95,7 +78,7 @@ async fn file_upload_task(
     url: Url,
     file_ref: FileRef,
     keyphrase: Option<String>,
-    progress_reporter: mpsc::Sender<ProgressUpdate>,
+    progress_reporter: ProgressReporter,
 ) -> Result<FileUploadStatus> {
     let file = File::open(file_ref.path).await?;
 
@@ -109,7 +92,7 @@ async fn file_upload_task(
             let _ = progress_reporter
                 .send(ProgressUpdate {
                     file_name: file_name.clone(),
-                    bytes_uploaded: read_len,
+                    bytes_transmitted: read_len,
                 })
                 .await;
         }
@@ -161,9 +144,4 @@ impl TryFrom<PathBuf> for FileRef {
             path,
         })
     }
-}
-
-struct ProgressUpdate {
-    file_name: String,
-    bytes_uploaded: u64,
 }

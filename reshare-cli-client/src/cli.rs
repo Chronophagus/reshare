@@ -42,4 +42,6 @@ pub struct PutArgs {
 pub struct GetArgs {
     #[structopt(long)]
     pub key_phrase: Option<String>,
+
+    pub file_list: Vec<String>,
 }
