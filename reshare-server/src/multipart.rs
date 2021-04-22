@@ -87,7 +87,10 @@ impl MultipartFiles {
                     .as_ref()
                     .and_then(|content| content.get_filename())
                     .filter(|&name| !name.is_empty())
-                    .map(|s| s.to_owned())
+                    .map(|s| {
+                        let pos = s.rfind('/').unwrap_or(0);
+                        s[pos..].to_owned()
+                    })
                     .ok_or(MultipartProcessingError::InvalidFile)?;
 
                 Ok(Some(MultipartFile {

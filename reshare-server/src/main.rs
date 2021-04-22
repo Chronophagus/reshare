@@ -6,7 +6,7 @@ mod uploader;
 use actix_multipart::Multipart;
 use actix_web::{
     body::Body, dev::HttpResponseBuilder, error::ResponseError, get, http::header,
-    middleware::Logger, post, web, App, Error, HttpResponse, HttpServer, Responder,
+    middleware::Logger, post, web, App, Error, HttpResponse, HttpServer,
 };
 use file_storage::FileStorage;
 use reshare_models::{FileInfo, FileUploadStatus};
@@ -16,11 +16,8 @@ use uploader::UploadForm;
 type Storage = Mutex<FileStorage>;
 
 #[get("/list")]
-async fn list(storage: web::Data<Storage>) -> impl Responder {
-    let guard = storage.lock().unwrap();
-
-    let files: Vec<_> = guard.list(&None).unwrap().collect();
-    HttpResponse::Ok().json(files)
+async fn list(storage: web::Data<Storage>) -> Result<HttpResponse, Error> {
+    list_impl(storage, None).await
 }
 
 #[get("/private/{keyphrase}")]
@@ -28,9 +25,16 @@ async fn list_private(
     storage: web::Data<Storage>,
     web::Path(keyphrase): web::Path<String>,
 ) -> Result<HttpResponse, Error> {
+    list_impl(storage, Some(keyphrase)).await
+}
+
+async fn list_impl(
+    storage: web::Data<Storage>,
+    keyphrase: Option<String>,
+) -> Result<HttpResponse, Error> {
     let guard = storage.lock().unwrap();
 
-    let files: Vec<_> = guard.list(&Some(keyphrase))?.collect();
+    let files: Vec<_> = guard.list(&keyphrase)?.collect();
     Ok(HttpResponse::Ok().json(files))
 }
 

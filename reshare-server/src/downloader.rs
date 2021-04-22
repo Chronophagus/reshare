@@ -100,39 +100,6 @@ impl Stream for DownloadStream {
     }
 }
 
-struct GreedyDownloadStream {
-    file: std::fs::File,
-}
-
-impl From<std::fs::File> for GreedyDownloadStream {
-    fn from(file: std::fs::File) -> Self {
-        Self { file }
-    }
-}
-
-impl Stream for GreedyDownloadStream {
-    type Item = Result<Bytes, ActixError>;
-
-    fn poll_next(self: Pin<&mut Self>, _cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        use std::io::prelude::Read;
-
-        let this = self.get_mut();
-        let mut buf = BytesMut::with_capacity(8192);
-        unsafe {
-            buf.set_len(8192);
-        }
-
-        match this.file.read(&mut buf) {
-            Ok(bytes_read) if bytes_read == 0 => Poll::Ready(None),
-            Ok(bytes_read) => {
-                buf.truncate(bytes_read);
-                Poll::Ready(Some(Ok(buf.freeze())))
-            }
-            Err(e) => Poll::Ready(Some(Err(e.into()))),
-        }
-    }
-}
-
 #[derive(Debug, Error)]
 pub enum DownloadError {
     #[error("Error reading file")]
