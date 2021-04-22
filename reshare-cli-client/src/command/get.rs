@@ -6,7 +6,7 @@ use crate::utils::{
 use anyhow::{anyhow, bail};
 use bytes::Bytes;
 use futures::{future, Stream, StreamExt};
-use reqwest::Url;
+use reqwest::{StatusCode, Url};
 use tokio::{fs::File, io::AsyncWriteExt, runtime::Runtime};
 
 pub fn execute(args: GetArgs) -> Result<()> {
@@ -18,7 +18,13 @@ pub fn execute(args: GetArgs) -> Result<()> {
         bail!("No files to download");
     }
 
-    let query_url = server_url.join("api/")?.join("download/")?;
+    let query_url = match args.key_phrase {
+        Some(key_phrase) => server_url
+            .join("api/")?
+            .join("private/")?
+            .join(&format!("{}/", key_phrase))?,
+        None => server_url.join("api/")?.join("download/")?,
+    };
 
     let rt = Runtime::new()?;
 
@@ -73,6 +79,15 @@ async fn get_file_info(
     let file_url = query_url.join(&file_name)?;
 
     let response = reqwest::get(file_url).await?;
+
+    if !response.status().is_success() {
+        if response.status() == StatusCode::NOT_FOUND {
+            bail!("{} not found", file_name);
+        } else {
+            let contents = response.text().await?;
+            bail!("{}", contents);
+        }
+    }
 
     let file_len = response
         .content_length()

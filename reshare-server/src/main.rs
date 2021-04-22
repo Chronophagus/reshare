@@ -84,10 +84,26 @@ async fn download(
     web::Path(file_name): web::Path<String>,
     storage: web::Data<Storage>,
 ) -> Result<HttpResponse, Error> {
+    download_impl(file_name, None, storage).await
+}
+
+#[get("/private/{keyphrase}/{file_name}")]
+async fn download_private(
+    web::Path((keyphrase, file_name)): web::Path<(String, String)>,
+    storage: web::Data<Storage>,
+) -> Result<HttpResponse, Error> {
+    download_impl(file_name, Some(keyphrase), storage).await
+}
+
+async fn download_impl(
+    file_name: String,
+    keyphrase: Option<String>,
+    storage: web::Data<Storage>,
+) -> Result<HttpResponse, Error> {
     let file_info = {
         let guard = storage.lock().unwrap();
         guard
-            .get_file(file_name, &None)
+            .get_file(file_name, &keyphrase)
             .cloned()
             .ok_or_else(|| HttpResponse::NotFound().finish())?
     };
@@ -103,14 +119,6 @@ async fn download(
     Ok(HttpResponse::Ok()
         .header(header::CONTENT_DISPOSITION, content_dispostion)
         .body(response_body))
-}
-
-#[get("/private/{keyphrase}/{file_name}")]
-async fn download_private(
-    web::Path((a, b)): web::Path<(String, String)>,
-    _storage: web::Data<Storage>,
-) -> impl Responder {
-    HttpResponse::Ok().json(format!("{}-{}", a, b))
 }
 
 #[get("/upload")]

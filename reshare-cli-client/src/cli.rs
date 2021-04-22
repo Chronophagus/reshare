@@ -27,14 +27,14 @@ pub struct ConfigArgs {
 
 #[derive(Debug, StructOpt)]
 pub struct ListArgs {
-    #[structopt(long)]
+    #[structopt(short, long)]
     /// A key phrase to list some private storage
     pub key_phrase: Option<String>,
 }
 
 #[derive(Debug, StructOpt)]
 pub struct PutArgs {
-    #[structopt(long)]
+    #[structopt(short, long)]
     /// A key phrase to put files into a hidden private storage
     pub key_phrase: Option<String>,
 
@@ -44,7 +44,7 @@ pub struct PutArgs {
 
 #[derive(Debug, StructOpt)]
 pub struct GetArgs {
-    #[structopt(long)]
+    #[structopt(short, long)]
     /// A key phrase to get files from some private storage
     pub key_phrase: Option<String>,
 
