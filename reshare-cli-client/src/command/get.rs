@@ -1,7 +1,7 @@
 use super::*;
 use crate::utils::{
     progress_tracker::{ProgressReporter, ProgressTracker, ProgressUpdate},
-    MonitoredStream,
+    ChanConnector, MonitoredStream,
 };
 use anyhow::{anyhow, bail};
 use bytes::Bytes;
@@ -92,18 +92,13 @@ async fn download_file<S: Stream<Item = ByteChunk> + Unpin>(
     let file_name = file_info.name.clone();
 
     let mut file = create_file(file_info.name).await?;
-    let (mut stream, mut monitor) = MonitoredStream::new(file_info.stream);
+    let (mut stream, monitor) = MonitoredStream::new(file_info.stream);
 
-    tokio::spawn(async move {
-        while let Some(write_len) = monitor.recv().await {
-            let _ = reporter
-                .send(ProgressUpdate {
-                    file_name: file_name.clone(),
-                    bytes_transmitted: write_len,
-                })
-                .await;
-        }
-    });
+    ChanConnector::connect_with(monitor, reporter, move |bytes_written| ProgressUpdate {
+        file_name: file_name.clone(),
+        bytes_transmitted: bytes_written,
+    })
+    .seal();
 
     while let Some(chunk) = stream.next().await {
         let chunk = chunk?;

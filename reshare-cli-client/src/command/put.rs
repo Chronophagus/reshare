@@ -1,7 +1,7 @@
 use super::*;
 use crate::utils::{
     progress_tracker::{ProgressReporter, ProgressTracker, ProgressUpdate},
-    MonitoredStream,
+    ChanConnector, MonitoredStream,
 };
 use anyhow::{anyhow, bail};
 use futures::future;
@@ -83,20 +83,17 @@ async fn file_upload_task(
     let file = File::open(file_ref.path).await?;
 
     let file_stream = FramedRead::new(file, BytesCodec::new());
-    let (file_stream, mut monitor) = MonitoredStream::new(file_stream);
+    let (file_stream, monitor) = MonitoredStream::new(file_stream);
 
     let file_name = file_ref.name.clone();
 
-    tokio::spawn(async move {
-        while let Some(read_len) = monitor.recv().await {
-            let _ = progress_reporter
-                .send(ProgressUpdate {
-                    file_name: file_name.clone(),
-                    bytes_transmitted: read_len,
-                })
-                .await;
+    ChanConnector::connect_with(monitor, progress_reporter, move |bytes_read| {
+        ProgressUpdate {
+            file_name: file_name.clone(),
+            bytes_transmitted: bytes_read,
         }
-    });
+    })
+    .seal();
 
     let file_part = Part::stream_with_length(Body::wrap_stream(file_stream), file_ref.len)
         .file_name(file_ref.name.clone());
