@@ -1,0 +1,33 @@
+@charset "UTF-8";
+
+@import "materialize-src/sass/materialize.scss";
+
+.circle {
+    border-radius: 50%;
+}
+
+.centered-cell {
+    padding-left: 2rem;
+}
+
+.spacer {
+    height: 16px;
+}
+
+.get-files-btn {
+    width: 100%;
+    font-weight: bold;
+}
+
+.input_field {
+    font-size: 24pt;
+}
+
+.contents-header {
+    align: center;
+}
+
+.upload-button {
+    right: 30px;
+    bottom: 20px;
+}
