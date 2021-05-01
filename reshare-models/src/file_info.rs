@@ -25,7 +25,12 @@ impl FileInfo {
         Self {
             name: "dummy-file-name.jpg".to_string(),
             size: 100500,
-            upload_date: Local::now(),
+            upload_date: DateTime::parse_from_str(
+                "2021 Apr 13 12:09:14.274 +0000",
+                "%Y %b %d %H:%M:%S%.3f %z",
+            )
+            .unwrap()
+            .into(),
             storage_path: "/".into(),
         }
     }
