@@ -1,0 +1,14 @@
+[env]
+CARGO_MAKE_EXTEND_WORKSPACE_MAKEFILE = true
+
+[tasks.release]
+command = "cargo"
+args = ["build", "--release"]
+
+[tasks.serve-helper]
+run_task = { name = "release", fork = true }
+
+[tasks.serve]
+workspace = false
+command = "./target/release/reshare-server"
+dependencies = ["serve-helper"]

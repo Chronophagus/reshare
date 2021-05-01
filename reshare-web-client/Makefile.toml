@@ -1,0 +1,18 @@
+# ----- Install Deps -----
+
+[tasks.install-wasm-bindgen-cli]
+install_crate = { crate_name = "wasm-bindgen-cli", binary = "wasm-bindgen", test_arg = "-V" }
+
+[tasks.install-trunk]
+install_crate = { crate_name = "trunk", binary = "trunk", test_arg = "-V", install_crate_args = ["--locked"] }
+
+[tasks.add-wasm-target]
+command = "rustup"
+args = ["target", "add", "wasm32-unknown-unknown"]
+
+
+# ----- BUILD -----
+[tasks.release]
+command = "trunk"
+args = ["build", "--release", "--dist", "../target/release/web_page"]
+dependencies = ["add-wasm-target", "install-trunk", "install-wasm-bindgen-cli"]
