@@ -10,6 +10,13 @@
     padding-left: 2rem;
 }
 
+.centered-block {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+
 .spacer {
     height: 16px;
 }
@@ -35,8 +42,4 @@
 .no-files {
     min-height: 10rem;
     font-size: 22px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
 }
-

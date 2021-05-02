@@ -1,8 +1,19 @@
-mod app_state;
+mod files_view;
+mod storage_state;
 
-use app_state::{AppState, StorageState};
+use files_view::{FilesView, FilesViewMode};
 use reshare_models::FileInfo;
+use std::cell::RefCell;
+use std::rc::Rc;
+use storage_state::StorageState;
+use yew::format::{Json, Nothing};
 use yew::prelude::*;
+use yew::services::fetch::{FetchService, FetchTask, Request, Response, StatusCode};
+
+fn main() {
+    wasm_logger::init(wasm_logger::Config::default());
+    yew::start_app::<ReshareModel>();
+}
 
 // ** Messages **
 
@@ -10,17 +21,137 @@ use yew::prelude::*;
 enum Msg {
     GetFiles,
     KeyPhraseUpdated(String),
+    ReceivedFiles(FetchedFiles),
 }
 
 // ** Models **
 
-struct Model {
-    link: ComponentLink<Self>,
-    app_state: AppState,
-    files: Vec<FileInfo>,
+#[derive(Debug)]
+struct FetchedFiles {
+    storage_state: StorageState,
+    file_list: Vec<FileInfo>,
 }
 
-impl Model {
+struct ReshareModel {
+    link: ComponentLink<Self>,
+    storage_state: StorageState,
+    fetch_task: Option<FetchTask>,
+    // RefCell is used here for optimization purposes
+    files_view_mode: RefCell<Option<FilesViewMode>>,
+}
+
+impl Component for ReshareModel {
+    type Message = Msg;
+    type Properties = ();
+
+    fn create(_props: Self::Properties, link: ComponentLink<Self>) -> Self {
+        let model = Self {
+            link,
+            storage_state: StorageState::Public,
+            fetch_task: None,
+            files_view_mode: RefCell::new(None),
+        };
+
+        model.link.send_message(Msg::GetFiles);
+        model
+    }
+
+    fn update(&mut self, msg: Self::Message) -> ShouldRender {
+        match msg {
+            Msg::GetFiles => {
+                if self.fetch_task.is_some() {
+                    return false;
+                }
+
+                let req = match Request::get(self.storage_state.fetch_files_url()).body(Nothing) {
+                    Ok(req) => req,
+                    Err(e) => {
+                        log::error!("{}", e);
+                        return false;
+                    }
+                };
+
+                let storage_state = self.storage_state.clone();
+
+                let callback = self.link.callback(
+                    move |response: Response<Json<Result<Vec<FileInfo>, anyhow::Error>>>| {
+                        let Json(data) = if response.status() == StatusCode::NOT_FOUND {
+                            log::error!("Storage not found");
+                            Json(Ok(Vec::new()))
+                        } else {
+                            response.into_body()
+                        };
+
+                        let file_list = data.unwrap_or_else(|e| {
+                            log::error!("{}", e);
+                            Vec::new()
+                        });
+
+                        Msg::ReceivedFiles(FetchedFiles {
+                            file_list,
+                            storage_state: storage_state.clone(),
+                        })
+                    },
+                );
+
+                let fetch_task = FetchService::fetch(req, callback).expect("Fetching must work");
+                self.fetch_task = Some(fetch_task);
+                *self.files_view_mode.borrow_mut() = Some(FilesViewMode::ShowProgress);
+
+                true
+            }
+            Msg::ReceivedFiles(fetched_files) => {
+                *self.files_view_mode.borrow_mut() = Some(FilesViewMode::ShowFiles(fetched_files));
+                self.fetch_task = None;
+                true
+            }
+            Msg::KeyPhraseUpdated(key_phrase) => {
+                if key_phrase.is_empty() {
+                    self.storage_state = StorageState::Public;
+                } else {
+                    self.storage_state = StorageState::Private { key_phrase };
+                }
+
+                false
+            }
+        }
+    }
+
+    fn change(&mut self, _props: Self::Properties) -> ShouldRender {
+        false
+    }
+
+    fn view(&self) -> Html {
+        let files_view_component = match self.files_view_mode.borrow_mut().take() {
+            Some(view_mode) => html! {
+                <FilesView mode=Rc::new(view_mode) />
+            },
+            None => html! {
+                <FilesView />
+            },
+        };
+
+        html! {
+            <>
+            <div class="container">
+                <div class="row spacer"></div>
+
+                { self.render_header() }
+
+                <div class="row spacer"></div>
+                <div class="divider"></div>
+
+                { files_view_component }
+            </div>
+
+            { self.render_upload_button() }
+
+            </>
+        }
+    }
+}
+
+impl ReshareModel {
     fn render_header(&self) -> Html {
         let key_phrase_update_cb = self
             .link
@@ -61,50 +192,6 @@ impl Model {
         }
     }
 
-    fn render_storage(&self) -> Html {
-        let contents = if self.files.is_empty() {
-            html! {
-                <div class="row section no-files">
-                    <p>{ "No files are currently available" }</p>
-                </div>
-            }
-        } else {
-            let download_url_root = self.app_state.download_url_root();
-
-            html! {
-                <table class="highlight">
-                    <thead>
-                        <tr>
-                            <th>{ "File name" }</th>
-                            <th>{ "Upload date" }</th>
-                            <th>{ "Size" }</th>
-                            <th>{ "Download" } </th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        { for self.files.iter().map(|f| into_table_row(f, &download_url_root)) }
-                    </tbody>
-                </table>
-            }
-        };
-
-        html! {
-            <>
-            <div class="row section">
-                <div class="col s12">
-                    <h4 class="center-align">{ &self.app_state.storage_state }</h4>
-                </div>
-            </div>
-
-            <div class="row section">
-                <div class="col s10 offset-s1">
-                    { contents }
-                </div>
-            </div>
-            </>
-        }
-    }
-
     fn render_upload_button(&self) -> Html {
         html! {
             <div class="fixed-action-btn">
@@ -114,87 +201,4 @@ impl Model {
             </div>
         }
     }
-}
-
-impl Component for Model {
-    type Message = Msg;
-    type Properties = ();
-
-    fn create(_props: Self::Properties, link: ComponentLink<Self>) -> Self {
-        Self {
-            link,
-            app_state: Default::default(),
-            files: vec![FileInfo::dummy()],
-        }
-    }
-
-    fn update(&mut self, msg: Self::Message) -> ShouldRender {
-        match msg {
-            Msg::GetFiles => {
-                self.files = self.app_state.fetch_files().unwrap();
-                true
-            }
-            Msg::KeyPhraseUpdated(key_phrase) => {
-                if key_phrase.is_empty() {
-                    self.app_state.storage_state = StorageState::Public;
-                } else {
-                    self.app_state.storage_state = StorageState::Private { key_phrase };
-                }
-
-                false
-            }
-        }
-    }
-
-    fn change(&mut self, _props: Self::Properties) -> ShouldRender {
-        false
-    }
-
-    fn view(&self) -> Html {
-        html! {
-            <>
-            <div class="container">
-                <div class="row spacer"></div>
-
-                { self.render_header() }
-
-                <div class="row spacer"></div>
-                <div class="divider"></div>
-
-                { self.render_storage() }
-            </div>
-
-            { self.render_upload_button() }
-
-            </>
-        }
-    }
-}
-
-fn into_table_row(file_info: &FileInfo, download_url_root: &str) -> Html {
-    use indicatif::HumanBytes;
-    let human_readable_size = HumanBytes(file_info.size);
-    let human_readable_date = file_info
-        .upload_date
-        .format("%Y %b %d - %H:%M:%S")
-        .to_string();
-
-    let download_path = format!("{}{}", download_url_root, file_info.name);
-    html! {
-        <tr>
-            <td>{ &file_info.name }</td>
-            <td>{ human_readable_date }</td>
-            <td>{ human_readable_size }</td>
-            <td class="centered-cell">
-                <a href={ download_path } >
-                    <i class="waves-effect waves-green circle material-icons ">{ "file_download" } </i>
-                </a>
-            </td>
-        </tr>
-    }
-}
-
-fn main() {
-    wasm_logger::init(wasm_logger::Config::default());
-    yew::start_app::<Model>();
 }

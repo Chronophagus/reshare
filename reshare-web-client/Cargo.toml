@@ -12,3 +12,5 @@ wasm-logger = "0.2.0"
 yew = "0.17.4"
 reshare-models = { path = "../reshare-models" }
 indicatif = "0.16.0"
+anyhow = "1.0.40"
+urlencoding = "1.1.1"

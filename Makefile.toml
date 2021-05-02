@@ -10,5 +10,8 @@ run_task = { name = "release", fork = true }
 
 [tasks.serve]
 workspace = false
-command = "./target/release/reshare-server"
+script = '''
+cd ./target/release/
+./reshare-server
+'''
 dependencies = ["serve-helper"]

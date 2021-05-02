@@ -3,6 +3,7 @@ mod file_storage;
 mod multipart;
 mod uploader;
 
+use actix_files::Files;
 use actix_multipart::Multipart;
 use actix_web::{
     body::Body, dev::HttpResponseBuilder, error::ResponseError, get, http::header,
@@ -168,6 +169,7 @@ async fn main() -> std::io::Result<()> {
                     .service(upload)
                     .service(dummy_uploader),
             )
+            .service(Files::new("/", "./web_page").index_file("index.html"))
     };
 
     HttpServer::new(app).bind(listen_addr)?.run().await?;
