@@ -33,7 +33,6 @@ pub struct Mode {
 }
 
 pub struct FilesView {
-    link: ComponentLink<Self>,
     view_mode: Mode,
 }
 
@@ -41,11 +40,8 @@ impl Component for FilesView {
     type Message = ();
     type Properties = Mode;
 
-    fn create(props: Self::Properties, link: ComponentLink<Self>) -> Self {
-        Self {
-            view_mode: props,
-            link,
-        }
+    fn create(props: Self::Properties, _link: ComponentLink<Self>) -> Self {
+        Self { view_mode: props }
     }
 
     fn update(&mut self, msg: Self::Message) -> ShouldRender {

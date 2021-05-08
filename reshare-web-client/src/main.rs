@@ -1,11 +1,13 @@
 mod files_view;
 mod storage_state;
+mod uploader;
+mod utils;
 
 use files_view::{FilesView, FilesViewMode};
 use reshare_models::FileInfo;
-use std::cell::RefCell;
-use std::rc::Rc;
+use std::{cell::RefCell, rc::Rc};
 use storage_state::StorageState;
+use uploader::Uploader;
 use yew::format::{Json, Nothing};
 use yew::prelude::*;
 use yew::services::fetch::{FetchService, FetchTask, Request, Response, StatusCode};
@@ -22,6 +24,7 @@ enum Msg {
     GetFiles,
     KeyPhraseUpdated(String),
     ReceivedFiles(FetchedFiles),
+    UploadButtonPressed,
 }
 
 // ** Models **
@@ -32,12 +35,30 @@ struct FetchedFiles {
     file_list: Vec<FileInfo>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ViewState {
+    Downloader,
+    Uploader,
+}
+
+impl ViewState {
+    fn switch_state(&mut self) {
+        let new_state = match self {
+            Self::Downloader => Self::Uploader,
+            Self::Uploader => Self::Downloader,
+        };
+
+        *self = new_state
+    }
+}
+
 struct ReshareModel {
     link: ComponentLink<Self>,
     storage_state: StorageState,
     fetch_task: Option<FetchTask>,
     // RefCell is used here for optimization purposes
     files_view_mode: RefCell<Option<FilesViewMode>>,
+    main_view_state: ViewState,
 }
 
 impl Component for ReshareModel {
@@ -50,6 +71,7 @@ impl Component for ReshareModel {
             storage_state: StorageState::Public,
             fetch_task: None,
             files_view_mode: RefCell::new(None),
+            main_view_state: ViewState::Downloader,
         };
 
         model.link.send_message(Msg::GetFiles);
@@ -114,6 +136,15 @@ impl Component for ReshareModel {
 
                 false
             }
+            Msg::UploadButtonPressed => {
+                self.main_view_state.switch_state();
+
+                if let ViewState::Downloader = self.main_view_state {
+                    self.link.send_message(Msg::GetFiles);
+                }
+
+                true
+            }
         }
     }
 
@@ -122,14 +153,7 @@ impl Component for ReshareModel {
     }
 
     fn view(&self) -> Html {
-        let files_view_component = match self.files_view_mode.borrow_mut().take() {
-            Some(view_mode) => html! {
-                <FilesView mode=Rc::new(view_mode) />
-            },
-            None => html! {
-                <FilesView />
-            },
-        };
+        let files_view_mode = Rc::new(self.files_view_mode.borrow_mut().take().unwrap_or_default());
 
         html! {
             <>
@@ -141,10 +165,12 @@ impl Component for ReshareModel {
                 <div class="row spacer"></div>
                 <div class="divider"></div>
 
-                { files_view_component }
+                <FilesView mode=files_view_mode />
             </div>
 
             { self.render_upload_button() }
+
+            <Uploader is_shown=self.main_view_state == ViewState::Uploader />
 
             </>
         }
@@ -195,7 +221,9 @@ impl ReshareModel {
     fn render_upload_button(&self) -> Html {
         html! {
             <div class="fixed-action-btn">
-                <button class="waves-effect waves-light btn-floating btn-large direction-top upload-button">
+                <button
+                  class="waves-effect waves-light btn-floating btn-large direction-top upload-button"
+                  onclick=self.link.callback(|_| Msg::UploadButtonPressed)>
                     <i class="large material-icons">{ "file_upload" }</i>
                 </button>
             </div>
