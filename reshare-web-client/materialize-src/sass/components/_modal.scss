@@ -5,7 +5,8 @@
 
   @extend .z-depth-5;
 
-  display: none;
+  display: block;
+  z-index: 1000;
   position: fixed;
   left: 0;
   right: 0;
@@ -57,9 +58,9 @@
   height: 125%;
   width: 100%;
   background: #000;
-  display: none;
+  display: block;
+  opacity: 0.5;
 
-  will-change: opacity;
 }
 
 // Modal with fixed action footer

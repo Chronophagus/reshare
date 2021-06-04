@@ -1,5 +1,3 @@
-use reshare_models::FileInfo;
-
 #[derive(Debug, Clone)]
 pub enum StorageState {
     Public,

@@ -30,7 +30,18 @@ impl Component for Uploader {
     fn view(&self) -> Html {
         if self.props.is_shown {
             html! {
-                <div><p>{ "TODO" }</p></div>
+            <>
+              <div class="modal">
+                <div class="modal-content">
+                  <h4>{ "Upload files" }</h4>
+                  <p>{ "TODO: Form" }</p>
+                </div>
+                <div class="modal-footer">
+                  <button class="modal-close modal-action waves-effect btn-flat">{ "Close" }</button>
+                </div>
+              </div>
+              <div class="modal-overlay"></div>
+            </>
             }
         } else {
             html! {}

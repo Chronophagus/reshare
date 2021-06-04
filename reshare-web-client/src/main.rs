@@ -3,7 +3,7 @@ mod storage_state;
 mod uploader;
 mod utils;
 
-use files_view::{FilesView, FilesViewMode};
+use files_view::{FetchedFiles, FilesView, FilesViewMode};
 use reshare_models::FileInfo;
 use std::{cell::RefCell, rc::Rc};
 use storage_state::StorageState;
@@ -28,12 +28,6 @@ enum Msg {
 }
 
 // ** Models **
-
-#[derive(Debug)]
-struct FetchedFiles {
-    storage_state: StorageState,
-    file_list: Vec<FileInfo>,
-}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ViewState {

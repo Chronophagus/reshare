@@ -1,8 +1,16 @@
-use super::FetchedFiles;
+use crate::utils::NeqAssign;
+
+use crate::storage_state::StorageState;
 use reshare_models::FileInfo;
 use std::rc::Rc;
 use yew::prelude::*;
 use yew::Properties;
+
+#[derive(Debug)]
+pub struct FetchedFiles {
+    pub storage_state: StorageState,
+    pub file_list: Vec<FileInfo>,
+}
 
 pub enum FilesViewMode {
     Idle,
@@ -44,17 +52,12 @@ impl Component for FilesView {
         Self { view_mode: props }
     }
 
-    fn update(&mut self, msg: Self::Message) -> ShouldRender {
+    fn update(&mut self, _msg: Self::Message) -> ShouldRender {
         false
     }
 
     fn change(&mut self, props: Self::Properties) -> ShouldRender {
-        if self.view_mode == props {
-            false
-        } else {
-            self.view_mode = props;
-            true
-        }
+        self.view_mode.neq_assign(props)
     }
 
     fn view(&self) -> Html {
